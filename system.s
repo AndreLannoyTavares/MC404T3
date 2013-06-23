@@ -25,11 +25,16 @@ infinito:
 
 .align 4
 
-GPT_CR: GPT_CR:		.word 0x53FA0000	@ Endereço do Registrador de Controle do GPT
+GPT_CR: 		.word 0x53FA0000	@ Endereço do Registrador de Controle do GPT
 GPT_Prescaler:		.word 0x53FA0004	@ Endereço do Registrador Prescaler do GPT 
 GPT_SR:			.word 0x53FA0008	@ Endereço do Registrador de Status do GPT
 GPT_IR:			.word 0x53FA000C	@ Endereço do Registrador de Interrupt do GPT
 GPT_OCR1:		.word 0x53FA0010	@ Endereço do Registrador Ouptut Compare 1 do GPT
+
+UART1_URXD:		.word 0x53FBC000	@ Endereço do Registrador bla do UART
+UART4_URXD:		.word 0x53FBC000	@ Endereço do Registrador Prescaler do GPT 
+UART2_URXD:		.word 0x53FC0000	@ Endereço do Registrador de Status do GPT
+UART3_URXD:		.word 0x53FC4000	@ Endereço do Registrador de Interrupt do GPT
 
 start_handler:
 
@@ -43,6 +48,54 @@ start_handler:
 
 	@ Habilitar Interrupções
 	msr CPSR_c, #0x13 			@ Muda para o modo supervisor e habilita interrupções FIQ e IRQ
+
+	@ Configurar o UART
+
+	ldr r2, = UART1 			@ Carrega o Endereço da UART atual (UARTx)
+	
+	mov r1, 0x80
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR1
+	ldr r0, [r0]
+	mov r1, 0x0001 				
+	str r1, [r0]				@ Habilita o UART
+
+	mov r1, 0x84
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR2
+	ldr r0, [r0]
+	mov r1, 0x2127
+	str r1, [r0]				@ Define o controle de fluxo de Hardware, o formato de dados e habilita o transmissor e o receptor.
+
+	mov r1, 0x88
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR3
+	ldr r0, [r0]
+	mov r1, 0x0704
+	str r1, [r0]				@ Define UCR3[RXDMUXSEL] = 1
+
+	mov r1, 0x8C
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR4
+	ldr r0, [r0]
+	mov r1, 0x7C00
+	str r1, [r0]				@ Define CTS Trigger Level como 31
+	
+	mov r1, 0x90
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UFCR
+	ldr r0, [r0]
+	mov r1, 0x089E
+	str r1, [r0]				@ Define o divisor de clock interno como 5 (clock de referênica = 100MHz/5). Define TXTl = 2 e RXTL = 30
+
+	mov r1, 0xA4
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UBIR
+	ldr r0, [r0]
+	mov r1, 0x08FF
+	str r1, [r0]
+
+	mov r1, 0xA8
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UBMR				
+	ldr r0, [r0]
+	mov r1, 0x0C34
+	str r1, [r0]				@ Define a taxa de transmissão como 921.6Kbps (baseado no clock de referência de 20MHz)
+	
+	@ UCR1 = 0x2201 - Não habilitaremos interrupções TRDY e RRDY 
 
 	@ Configurar o GPT (General Purpouse Timer) 
 
@@ -106,6 +159,22 @@ start_handler:
 undef_handler:
 
 svc_handler:
+
+	@ Trata a syscall write
+
+		@ Escreve os R2 bytes do buffer no dispositivo UART. Retorna o número de bytes escritos (0 se nada for escrito, -1 se ocorrer algum erro). Essa implementação ignora arquivos e descritores de arquivos.
+
+	@ Trata a syscall exit
+
+		@ Encerra a execução do processo que a chamou, e libera seu PID para que possa ser usado por outro processo.
+
+	@ Trata a syscall fork
+
+		
+
+	@ Trata a syscall getpid
+
+		@ Retorna o Process ID do processo que a chamou
 
 abort_handler1:
 
