@@ -25,6 +25,10 @@ _start:
 
 .align 4
 
+PRC_CTRL:		.word 0x0		@ Armazena as informções sobre quais processos estão vivos.
+						@ Se o bit correspondente ao PID do processo é 1, o processo está vivo.
+CRNT_PRC:		.word 0x0		@ Armazena o Processo atual
+
 GPT_CR: 		.word 0x53FA0000	@ Endereço do Registrador de Controle do GPT
 GPT_Prescaler:		.word 0x53FA0004	@ Endereço do Registrador Prescaler do GPT 
 GPT_SR:			.word 0x53FA0008	@ Endereço do Registrador de Status do GPT
@@ -33,10 +37,18 @@ GPT_OCR1:		.word 0x53FA0010	@ Endereço do Registrador Ouptut Compare 1 do GPT
 
 CLOCK_COUNT:		.word 50		@ Valor até o qual o GPT deve contar antes de gerar uma interrupção
 
-UART1_URXD:		.word 0x53FBC000	@ Endereço do Registrador bla do UART
-UART4_URXD:		.word 0x53FBC000	@ Endereço do Registrador Prescaler do GPT 
-UART2_URXD:		.word 0x53FC0000	@ Endereço do Registrador de Status do GPT
-UART3_URXD:		.word 0x53FC4000	@ Endereço do Registrador de Interrupt do GPT
+UART1_URXD:		.word 0x53FBC000	@ Endereço do Registrador 1 do UART
+UART4_URXD:		.word 0x53FBC000	@ Endereço do Registrador 2 do UART
+UART2_URXD:		.word 0x53FC0000	@ Endereço do Registrador 3 do UART
+UART3_URXD:		.word 0x53FC4000	@ Endereço do Registrador 4 do UART
+UART1_USR1:		.word 0x53FBC094	@ Endereço do Registrador de Status do UART
+UART1_UTXD:		.word 0x53FBC040	@ Endereço do Registrador de Transmissão
+
+usuario:
+
+	bl 0x8000
+
+.align 4
 
 infinito:
 
@@ -177,7 +189,34 @@ restart_handler:
 			mov	r0, #1
 			str	r0, [r1, #TZIC_INTCTRL]
 			   
-	b infinito				@ Loop infinito do Sistema Operacional
+	mov	r0, #0B00000001
+	bl set_proc				@ Atualiza PRC_CTRL com a ligação do primeiro processo
+
+	b usuario				@ Loop infinito do Sistema Operacional
+
+set_proc:					@ Função auxiliar que atualzia PRC_CTRL e CRNT_PRC. Liga o bit recebido em r0
+						@ (processo vivo) de PRC_CTRL e guarda r0 em CRNT_PRC
+
+	ldr	r1, =PRC_CTRL			@ Carrefa o endereço do PRC_CTRL
+	ldr	r2, [r1]
+	orr	r2, r0, r2			@ Liga o bit recebido em r0	
+	str	r2, [r1]
+	
+	ldr 	r1, =CRNT_PRC
+	str 	r0, [r1]			@ Guarda o bit recebido em CRNT_PRC
+
+	mov pc, lr
+
+kill_proc:					@ função auxiliar que atualiza PRC_CTRL, desligando o bit r0 (processo morto).
+
+	mvn	r1, #0x0				@ r1 -> 1111111111111
+	eor	r2, r1, r0			@ r2 -> 1111101111111
+	ldr	r1, =PRC_CTRL			@ Carrefa o endereço do PRC_CTRL
+	ldr	r2, [r1]
+	orr	r2, r0, r2			@ Desliga o bit recebido em r0	
+	str	r2, [r1]
+	
+	mov pc, lr
 
 undef_handler:
 
@@ -190,10 +229,48 @@ svc_handler:
 	mov r0, #0x4
 	cmp r0, r7
 	beq svc_handler_write
+	mov r0, #0x0
+	cmp r0, r7
+	beq svc_handler_exit
 
 svc_handler_write:				@ Trata a syscall write
 
 		@ Escreve os R2 bytes do buffer no dispositivo UART. Retorna o número de bytes escritos (0 se nada for escrito, -1 se ocorrer algum erro). Essa implementação ignora arquivos e descritores de arquivos.
+
+	mrs 	r0, CPSR				@ Desliga as interrupções enquanto ocorre a escrita na UART
+	push 	{r0}
+	orr 	r0, r0, #0xC0
+	msr 	CPSR, r0
+
+	push {r4, r5, r6}
+
+	mov	r3, #0x0			@ Inicializa o contador de bytes escritos
+
+write_end_test:
+	cmp 	r1, r3				@ Testa fim da escrita
+	beq	write_end
+
+write_waiting:
+	ldr	r4, =UART1_USR1			@ Carrega o endereço do UART1_USR1
+	ldr	r4, [r4]			
+	ldr	r5, =0x1000			@ Mascara para o bit 13 (0x1000 -> 0b 0001 0000 0000 0000)
+	and	r6, r5, r4
+	cmp	r5, r6				@ Testa se o bit TRDY (13) está definido como 1
+	beq	write_add_letter		@ Se o bit estiver setado, escreve o próximo caracter
+	b 	write_waiting			@ Se não, tenta de novo
+
+write_add_letter:				@ Adiciona um caracter à fila de impressão TX_FIFO
+	ldr	r4, =UART1_UTXD
+	ldr	r4, [r4]
+	ldr	r5, [r2, #1]!			@ Calcula Próximo caracter e atualzia endereço
+	str	r5, [r4]
+	add	r3, r3, #1			@ Aumenta contador
+	b write_end_test	
+
+write_end:
+	pop {r4, r5, r6}
+	pop {r0}
+	msr 	CPSR, r0
 
 	sub lr, lr, #4				@ Corrige o valor de LR de PC+8 para PC+4, endereço da próxima instrução
 	movs pc, lr
