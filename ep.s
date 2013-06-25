@@ -1,7 +1,7 @@
 _start:
 
 .org 0x0
-	b start_handler 			@ Pula para o código que trata o Reset
+	b restart_handler 			@ Pula para o código que trata o Reset
 
 .org 0x4
 	b undef_handler				@ Pula para o código que trata o instruçÕes inválidas
@@ -21,9 +21,7 @@ _start:
 .org 0x1c
 	b fiq_handler				@ Pula para o código que trata interrupções de hardware (FIQ - modo rápido)
 
-infinito:
-
-	b infinito				@ Loop infinito do Sistema Operacional
+.org 0x100
 
 .align 4
 
@@ -33,14 +31,45 @@ GPT_SR:			.word 0x53FA0008	@ Endereço do Registrador de Status do GPT
 GPT_IR:			.word 0x53FA000C	@ Endereço do Registrador de Interrupt do GPT
 GPT_OCR1:		.word 0x53FA0010	@ Endereço do Registrador Ouptut Compare 1 do GPT
 
-CLOCK_COUNT:		.word 1		@ Valor até o qual o GPT deve contar antes de gerar uma interrupção
+CLOCK_COUNT:		.word 50		@ Valor até o qual o GPT deve contar antes de gerar uma interrupção
 
 UART1_URXD:		.word 0x53FBC000	@ Endereço do Registrador bla do UART
 UART4_URXD:		.word 0x53FBC000	@ Endereço do Registrador Prescaler do GPT 
 UART2_URXD:		.word 0x53FC0000	@ Endereço do Registrador de Status do GPT
 UART3_URXD:		.word 0x53FC4000	@ Endereço do Registrador de Interrupt do GPT
 
-start_handler:
+infinito:
+
+	b infinito				@ Loop infinito do Sistema Operacional
+
+restart_handler:
+
+	@ Configurar os valores da Pilha das Pilhas
+
+	.set USR_STACK, 0x11000
+	.set SVC_STACK, 0x10800
+	.set UND_STACK, 0x07c00
+	.set ABT_STACK, 0x07800
+	.set FIQ_STACK, 0x07400
+	.set IRQ_STACK, 0x07000
+
+	@ First configure stacks for all modes
+	mov sp, #SVC_STACK 
+	msr CPSR_c, #0xDF	@ Enter system mode, FIQ/IRQ disabled
+	mov sp, #USR_STACK
+	msr CPSR_c, #0xD1	@ Enter FIQ mode, FIQ/IRQ disabled
+	mov sp, #FIQ_STACK
+	msr CPSR_c, #0xD2	@ Enter IRQ mode, FIQ/IRQ disabled
+	mov sp, #IRQ_STACK
+	msr CPSR_c, #0xD7	@ Enter abort mode, FIQ/IRQ disabled
+	mov sp, #ABT_STACK
+	msr CPSR_c, #0xDB	@ Enter undefined mode, FIQ/IRQ disabled
+	mov sp, #UND_STACK
+	msr CPSR_c, #0x1F	@ Enter system mode, IRQ/FIQ enabled
+	
+	@ Habilitar Interrupções
+
+	msr CPSR_c, #0x13 			@ Muda para o modo supervisor e habilita interrupções FIQ e IRQ
 
 	@ Configurar o UART
 
@@ -148,10 +177,6 @@ start_handler:
 			mov	r0, #1
 			str	r0, [r1, #TZIC_INTCTRL]
 			   
-	
-	@ Habilitar Interrupções
-		msr CPSR_c, #0x13 			@ Muda para o modo supervisor e habilita interrupções FIQ e IRQ
-
 	b infinito				@ Loop infinito do Sistema Operacional
 
 undef_handler:
