@@ -186,19 +186,34 @@ undef_handler:
 
 svc_handler:
 
-	@ Trata a syscall write
+	@ Verifica o conteudo de r7 para realizar um switch e identificar a syscall
+	mov r0, #0x4
+	cmp r0, r7
+	beq svc_handler_write
+
+svc_handler_write:				@ Trata a syscall write
 
 		@ Escreve os R2 bytes do buffer no dispositivo UART. Retorna o número de bytes escritos (0 se nada for escrito, -1 se ocorrer algum erro). Essa implementação ignora arquivos e descritores de arquivos.
 
-	@ Trata a syscall exit
+	sub lr, lr, #4				@ Corrige o valor de LR de PC+8 para PC+4, endereço da próxima instrução
+	movs pc, lr
+
+svc_handler_exit:				@ Trata a syscall exit
 
 		@ Encerra a execução do processo que a chamou, e libera seu PID para que possa ser usado por outro processo.
 
-	@ Trata a syscall fork
+	sub lr, lr, #4				@ Corrige o valor de LR de PC+8 para PC+4, endereço da próxima instrução
+	movs pc, lr
 
-		
+svc_handler_fork:				@ Trata a syscall fork
 
-	@ Trata a syscall getpid
+	sub lr, lr, #4				@ Corrige o valor de LR de PC+8 para PC+4, endereço da próxima instrução
+	movs pc, lr
+
+svc_handler_getpid:				@ Trata a syscall getpid
+
+	sub lr, lr, #4				@ Corrige o valor de LR de PC+8 para PC+4, endereço da próxima instrução
+	movs pc, lr
 
 		@ Retorna o Process ID do processo que a chamou
 
