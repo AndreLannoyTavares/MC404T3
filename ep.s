@@ -33,6 +33,8 @@ GPT_SR:			.word 0x53FA0008	@ Endereço do Registrador de Status do GPT
 GPT_IR:			.word 0x53FA000C	@ Endereço do Registrador de Interrupt do GPT
 GPT_OCR1:		.word 0x53FA0010	@ Endereço do Registrador Ouptut Compare 1 do GPT
 
+CLOCK_COUNT:		.word 1		@ Valor até o qual o GPT deve contar antes de gerar uma interrupção
+
 UART1_URXD:		.word 0x53FBC000	@ Endereço do Registrador bla do UART
 UART4_URXD:		.word 0x53FBC000	@ Endereço do Registrador Prescaler do GPT 
 UART2_URXD:		.word 0x53FC0000	@ Endereço do Registrador de Status do GPT
@@ -40,60 +42,49 @@ UART3_URXD:		.word 0x53FC4000	@ Endereço do Registrador de Interrupt do GPT
 
 start_handler:
 
-	@ Configurar os Vetores de Exceção
-
-	@ Inicializar a MMU
-
-	@ Inicializar as pilhas e registradores
-
-	@ Inicializar dispositivos de E/S críticos
-
-	@ Habilitar Interrupções
-	msr CPSR_c, #0x13 			@ Muda para o modo supervisor e habilita interrupções FIQ e IRQ
-
 	@ Configurar o UART
 
 	ldr r2, = UART1_URXD 			@ Carrega o Endereço da UART atual (UARTx)
 	
 	mov r1, #0x80
-	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR1
 	ldr r0, [r0]
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR1
 	mov r1, #0x0001 				
 	str r1, [r0]				@ Habilita o UART
 
 	mov r1, #0x84
-	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR2
 	ldr r0, [r0]
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR2
 	ldr r1, =0x2127
 	str r1, [r0]				@ Define o controle de fluxo de Hardware, o formato de dados e habilita o transmissor e o receptor.
 
 	mov r1, #0x88
-	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR3
 	ldr r0, [r0]
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR3
 	ldr r1, =0x0704
 	str r1, [r0]				@ Define UCR3[RXDMUXSEL] = 1
 
 	mov r1, #0x8C
-	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR4
 	ldr r0, [r0]
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UCR4
 	ldr r1, =0x7C00
 	str r1, [r0]				@ Define CTS Trigger Level como 31
 	
 	mov r1, #0x90
-	add r0, r2, r1				@ Calcula o Endereço de UARTx-UFCR
 	ldr r0, [r0]
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UFCR
 	ldr r1, =0x089E
 	str r1, [r0]				@ Define o divisor de clock interno como 5 (clock de referênica = 100MHz/5). Define TXTl = 2 e RXTL = 30
 
 	mov r1, #0xA4
-	add r0, r2, r1				@ Calcula o Endereço de UARTx-UBIR
 	ldr r0, [r0]
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UBIR
 	ldr r1, =0x08FF
 	str r1, [r0]
 
 	mov r1, #0xA8
-	add r0, r2, r1				@ Calcula o Endereço de UARTx-UBMR				
 	ldr r0, [r0]
+	add r0, r2, r1				@ Calcula o Endereço de UARTx-UBMR				
 	ldr r1, =0x0C34
 	str r1, [r0]				@ Define a taxa de transmissão como 921.6Kbps (baseado no clock de referência de 20MHz)
 	
@@ -113,7 +104,8 @@ start_handler:
 	
 	ldr	r0, =GPT_OCR1			@ Carrega o endereço do GPT_OCR1
 	ldr	r0, [r0]			
-	mov	r1, #100			@ Valor até o qual desejamos contar antes de gerar uma interrupção tipo "Output Compare Channel 1"
+	ldr	r1, =CLOCK_COUNT		@ Valor até o qual desejamos contar antes de gerar uma interrupção tipo "Output Compare Channel 1"
+	ldr	r1, [r1]			
 	str	r1, [r0]
 
 	ldr	r0, =GPT_IR			@ Carrega o endereço de GPT_IR
@@ -123,40 +115,44 @@ start_handler:
 
 	@ Configurar o TZIC (TrustZone Interrup Controller)
 
-		@ Código fornecido pelo professor Edson Borin no enunciado do lab7 de MC404 1s2013
+			   @ Constantes para os endereços do TZIC
+			   @ (não são instruções, são diretivas do montador!)
+			   .set TZIC_BASE, 0x0FFFC000
+			   .set TZIC_INTCTRL, 0x0
+			   .set TZIC_INTSEC1, 0x84 
+			   .set TZIC_ENSET1, 0x104
+			   .set TZIC_PRIOMASK, 0xC
+			   .set TZIC_PRIORITY9, 0x424
 
-		@ Constantes para os endereços do TZIC
-		@ (não são instruções, são diretivas do montador!)
-		   .set TZIC_BASE, 0x0FFFC000
-		   .set TZIC_INTCTRL, 0x0
-		   .set TZIC_INTSEC1, 0x84 
-		   .set TZIC_ENSET1, 0x104
-		   .set TZIC_PRIOMASK, 0xC
-		   .set TZIC_PRIORITY9, 0x424
+			@ Liga o controlador de interrupções
+			@ R1 <= TZIC_BASE
+			ldr	r1, =TZIC_BASE
+			@ Configura interrupção 39 do GPT como não segura
+			mov	r0, #(1 << 7)
+			str	r0, [r1, #TZIC_INTSEC1]
+			@ Habilita interrupção 39 (GPT)
+			@ reg1 bit 7 (gpt)
+			mov	r0, #(1 << 7)
+			str	r0, [r1, #TZIC_ENSET1]
+			@ Configure interrupt39 priority as 1
+			@ reg9, byte 3
+			ldr r0, [r1, #TZIC_PRIORITY9]
+			bic r0, r0, #0xFF000000
+			mov r2, #1
+			orr r0, r0, r2, lsl #24
+			str r0, [r1, #TZIC_PRIORITY9]
+			@ Configure PRIOMASK as 0
+			eor r0, r0, r0
+			str r0, [r1, #TZIC_PRIOMASK]
+			@ Habilita o controlador de interrupções
+			mov	r0, #1
+			str	r0, [r1, #TZIC_INTCTRL]
+			   
+	
+	@ Habilitar Interrupções
+		msr CPSR_c, #0x13 			@ Muda para o modo supervisor e habilita interrupções FIQ e IRQ
 
-		@ Liga o controlador de interrupções
-		@ R1 <= TZIC_BASE
-		ldr	r1, =TZIC_BASE
-		@ Configura interrupção 39 do GPT como não segura
-		mov	r0, #(1 << 7)
-		str	r0, [r1, #TZIC_INTSEC1]
-		@ Habilita interrupção 39 (GPT)
-		@ reg1 bit 7 (gpt)
-		mov	r0, #(1 << 7)
-		str	r0, [r1, #TZIC_ENSET1]
-		@ Configure interrupt39 priority as 1
-		@ reg9, byte 3
-		ldr r0, [r1, #TZIC_PRIORITY9]
-		bic r0, r0, #0xFF000000
-		mov r2, #1
-		orr r0, r0, r2, lsl #24
-		str r0, [r1, #TZIC_PRIORITY9]
-		@ Configure PRIOMASK as 0
-		eor r0, r0, r0
-		str r0, [r1, #TZIC_PRIOMASK]
-		@ Habilita o controlador de interrupções
-		mov	r0, #1
-		str	r0, [r1, #TZIC_INTCTRL]
+	b infinito				@ Loop infinito do Sistema Operacional
 
 undef_handler:
 
@@ -191,15 +187,16 @@ irq_handler:
 	mov	r1, #1				@ Valor que informa ao GPT que o processador está ciente de que ocorreu a interrupção
 	str	r1, [r0]			@ GPT limpa a flag OF1
 
+	ldr 	r1, [r0]
+	add	r1, r1, #1
+	str	r1, [r0]
+
 	pop {r0, r1}
 	
 	sub pc, pc, #4				@ Corrige o valor de PC de PC+8 para PC+4, endereço da próxima instrução
 	movs pc, lr				@ Retorna para LR_irq e grava SPSR em CPSR
 
-	@ Salva o Contexto
-
-	@ Trata a Interrupção
-
-	@ Restaura o Contexto
-
 fiq_handler:
+
+	sub pc, pc, #4				@ Corrige o valor de PC de PC+8 para PC+4, endereço da próxima instrução
+	movs pc, lr

@@ -2,10 +2,9 @@ all: ep
 
 ep: ep.o 
 	@echo Linking ep.o
-	# Importante colocar dummyos.o primeiro na lista do linker
 	arm-elf-ld -Ttext=0x0 ep.o -o ep
 
-ep.o:
+ep.o: ep.s
 	@echo Assembling ep.s
 	arm-elf-as -g ep.s -o ep.o
 
