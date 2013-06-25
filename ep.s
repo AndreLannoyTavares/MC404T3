@@ -181,6 +181,9 @@ restart_handler:
 
 undef_handler:
 
+	sub lr, lr, #4				@ Corrige o valor de LR de PC+8 para PC+4, endereço da próxima instrução
+	movs pc, lr
+
 svc_handler:
 
 	@ Trata a syscall write
@@ -201,7 +204,13 @@ svc_handler:
 
 abort_handler1:
 
+	sub lr, lr, #4				@ Corrige o valor de LR de PC+8 para PC+4, endereço da próxima instrução
+	movs pc, lr
+
 abort_handler2:
+
+	sub lr, lr, #4				@ Corrige o valor de LR de PC+8 para PC+4, endereço da próxima instrução
+	movs pc, lr
 
 irq_handler:
 
@@ -218,10 +227,12 @@ irq_handler:
 
 	pop {r0, r1}
 	
-	sub pc, pc, #4				@ Corrige o valor de PC de PC+8 para PC+4, endereço da próxima instrução
+	sub lr, lr, #4				@ Corrige o valor de LR de PC+8 para PC+4, endereço da próxima instrução
 	movs pc, lr				@ Retorna para LR_irq e grava SPSR em CPSR
 
 fiq_handler:
 
-	sub pc, pc, #4				@ Corrige o valor de PC de PC+8 para PC+4, endereço da próxima instrução
+	@ Trata interrupções de Hardware (FIQ - Modo Rápido)
+
+	sub lr, lr, #4				@ Corrige o valor de LR de PC+8 para PC+4, endereço da próxima instrução
 	movs pc, lr
